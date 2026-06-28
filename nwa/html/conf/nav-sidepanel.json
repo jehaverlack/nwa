@@ -1,10 +1,10 @@
 {
   "sdl":{
-    "title": "SDL",
-    "desc": "Software Defined Laboratory",
-    "icon": "fa-solid fa-square-binary",
+    "title": "NWA",
+    "desc": "Node Web App",
+    "icon": "fa-solid fa-dice-d20",
     "page": "index",
-    "enabled": false,
+    "enabled": true,
     "items": []
   },
   "dash": {

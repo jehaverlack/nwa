@@ -1,15 +1,35 @@
 [
     {
       "title": "Node Web App (NWA)",
-      "icon": "fa-solid fa-square-binary",
+      "icon": "fa-solid fa-dice-d20",
       "page": "index",
       "enabled": true,
       "brand": true,
       "children": []
     },
     {
+      "title": "Pages",
+      "icon": "fa-solid fa-bookmark",
+      "page": "app",
+      "enabled": true,
+      "children": [
+        {
+          "title": "Page 1",
+          "icon": "fa-solid fa-1",
+          "page": "page1",
+          "enabled": true
+        },
+        {
+          "title": "Page 2",
+          "icon": "fa-solid fa-2",
+          "page": "page2",
+          "enabled": true
+        }
+      ]
+    },
+    {
       "title": "App",
-      "icon": "fa-solid fa-dice-d20",
+      "icon": "fa-solid fa-bars",
       "page": "app",
       "enabled": true,
       "children": [

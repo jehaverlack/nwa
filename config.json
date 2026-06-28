@@ -1,0 +1,22 @@
+{
+    "DIRS": {
+        "HOME": "~/.nwa",
+        "CONF": "HOME/conf",
+        "DOCS": "HOME/docs",
+        "LOGS": "HOME/logs",
+        "DATA": "HOME/data",
+        "SCRIPTS": "HOME/scripts",
+        "NODEJS": "HOME/nodejs"
+    },
+    "NODEJS": {
+        "VERSION": "24.18.0",
+        "TARGETS": [
+            "linux:x64",
+            "linux:arm64",
+            "linux:armv7l",
+            "darwin:x64",
+            "darwin:arm64",
+            "win:x64"
+        ]
+    }
+}

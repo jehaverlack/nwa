@@ -1,0 +1,23 @@
+{
+    "cluster": {
+        "id": "haverlab",
+        "name": "Haverlab",
+        "desc": "John Haverlack's Home Lab"
+    },
+    "dirs": {
+        "base": "DIRNAME/../..",
+        "app": "BASE/app",
+        "modules": "APP/modules",
+        "logs": "HOME/logs",
+        "data": "HOME/data",
+        "clstr": "DATA/cluster",
+        "proj": "DATA/proj",
+        "jobs": "DATA/jobs",
+        "conf": "HOME/conf",
+        "modconf": "BASE/conf/modules",
+        "html": "BASE/html"
+    },
+    "modules": {
+        "web": {}
+    }
+}

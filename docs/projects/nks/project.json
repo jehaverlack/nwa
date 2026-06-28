@@ -1,0 +1,31 @@
+{
+    "id": "nks-ca",
+    "name": "NKS 1D CA",
+    "desc": "Exploration of 1D elementary New Kind of Science (NKS) Cellular Automata (CA)",
+    "date": "2026-02-09",
+    "version": "0.0.0",
+    "parameters" : {
+        "x": {
+            "name": "X Cells",
+            "desc": "Number of Binary Cells on the X Dimension",
+            "type": "integer",
+            "min": 3,
+            "max": 15
+        },
+        "rule": {
+            "name": "Rule",
+            "desc": "Update Rule Index",
+            "type": "integer",
+            "min": 0,
+            "max": 255
+        },
+        "init": {
+            "name": "Initial State",
+            "desc": "Initial Binary State",
+            "type": "integer",
+            "min": 0,
+            "max": "2^x"
+        }
+    },
+    "iterations": 100
+}

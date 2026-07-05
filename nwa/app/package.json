@@ -23,7 +23,7 @@
   "dependencies": {
     "@alenaksu/json-viewer": "^2.0.1",
     "@fortawesome/fontawesome-free": "^6.7.2",
-    "aedes": "^0.51.3",
+    "aedes": "^1.1.1",
     "bootstrap": "^5.3.7",
     "bootstrap-icons": "^1.13.1",
     "chart.js": "^4.5.1",

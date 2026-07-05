@@ -15,6 +15,7 @@
   },
   "META_MAPS": {
     "package.json": {
+      "description": "description",
       "version": "version",
       "version_date": "version_date",
       "author": "author",
@@ -35,7 +36,6 @@
   "MANIFEST": [
     "README.md",
     "docs/DESIGN.md",
-    "sdl-mgr/app/package.json",
-    "sdl-wkr/app/package.json"
+    "nwa/app/package.json"
   ]
 }

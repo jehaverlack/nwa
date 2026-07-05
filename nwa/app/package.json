@@ -1,8 +1,8 @@
 {
   "name": "nwa",
-  "version": "0.1.0",
-  "version_date": "2026-02-08",
-  "description": "Node Web App (NWA)",
+  "version": "0.1.1",
+  "version_date": "2026-07-04",
+  "description": "Node Web App",
   "main": "index.js",
   "type": "module",
   "scripts": {

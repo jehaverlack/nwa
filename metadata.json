@@ -3,8 +3,8 @@
     "name": "nwa",
     "description": "Node Web App",
     "abbr": "NWA",
-    "version": "0.1.0",
-    "version_date": "2026-06-28",
+    "version": "0.1.1",
+    "version_date": "2026-07-04",
     "maturity": "PROD",
     "author": "John Haverlack",
     "copyright": "2026 John Haverlack",
@@ -15,6 +15,7 @@
   },
   "META_MAPS": {
     "package.json": {
+      "description": "description",
       "version": "version",
       "version_date": "version_date",
       "author": "author",
@@ -35,7 +36,6 @@
   "MANIFEST": [
     "README.md",
     "docs/DESIGN.md",
-    "sdl-mgr/app/package.json",
-    "sdl-wkr/app/package.json"
+    "nwa/app/package.json"
   ]
 }

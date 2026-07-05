@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# metadata-update.sh - Update SDL metadata in package.json and Markdown files
+# metadata-update.sh - Update NWA metadata in package.json and Markdown files
 set -euo pipefail
 
 # -----------------------------
 # Resolve paths
 # -----------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SDL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-META_FILE="$SDL_ROOT/metadata.json"
+NWA_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+META_FILE="$NWA_ROOT/metadata.json"
 
 command -v jq >/dev/null || { echo "jq required"; exit 1; }
 command -v sed >/dev/null || { echo "sed required"; exit 1; }
@@ -26,15 +26,34 @@ escape_regex() {
 # -----------------------------
 # Update package.json
 # -----------------------------
+# update_package_json() {
+#   local file="$1"
+#   local tmp
+#   tmp="$(mktemp)"
+
+#   jq \
+#     --slurpfile meta "$META_FILE" \
+#     '
+#     . as $pkg
+#     | ($meta.META_MAPS["package.json"] | to_entries) as $maps
+#     | reduce $maps[] as $m ($pkg;
+#         .[$m.key] = $meta.METADATA[$m.value]
+#       )
+#     ' "$file" > "$tmp"
+
+#   mv "$tmp" "$file"
+#   echo "Updated $file"
+# }
 update_package_json() {
   local file="$1"
   local tmp
   tmp="$(mktemp)"
 
   jq \
-    --argfile meta "$META_FILE" \
+    --slurpfile meta_file "$META_FILE" \
     '
-    . as $pkg
+    ($meta_file[0]) as $meta
+    | . as $pkg
     | ($meta.META_MAPS["package.json"] | to_entries) as $maps
     | reduce $maps[] as $m ($pkg;
         .[$m.key] = $meta.METADATA[$m.value]
@@ -68,7 +87,7 @@ update_markdown() {
 # Main
 # -----------------------------
 jq -r '.MANIFEST[]' "$META_FILE" | while read -r rel_path; do
-  file="$SDL_ROOT/$rel_path"
+  file="$NWA_ROOT/$rel_path"
 
   if [[ ! -f "$file" ]]; then
     echo "WARN: $rel_path not found, skipping"

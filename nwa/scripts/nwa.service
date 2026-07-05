@@ -1,0 +1,31 @@
+[Unit]
+Description=Node Web App
+After=network.target
+
+[Service]
+Type=simple
+
+# Environment
+Environment=NWA_HOME=%h/.nwa
+Environment=NODE_ENV=production
+
+# Paths
+WorkingDirectory=%h/.nwa/versions/current/nwa/app
+
+# Start command
+ExecStart=%h/.nwa/nodejs/current/bin/node index.js
+
+# Restart behavior
+Restart=on-failure
+RestartSec=3
+
+# Logging
+StandardOutput=append:%h/.nwa/logs/nwa.log
+StandardError=append:%h/.nwa/logs/nwa.log
+
+# Clean shutdown
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

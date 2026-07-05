@@ -4,14 +4,14 @@
     "description": "Node Web App",
     "abbr": "NWA",
     "version": "0.1.0",
-    "version_date": "2026-02-08",
+    "version_date": "2026-06-28",
     "maturity": "PROD",
     "author": "John Haverlack",
     "copyright": "2026 John Haverlack",
     "license": "MIT",
     "license_url": "https://opensource.org/license/MIT",
-    "homepage": "https://github.com/jehaverlack/sdl",
-    "git_repo": "https://github.com/jehaverlack/sdl.git"
+    "homepage": "https://github.com/jehaverlack/nwa",
+    "git_repo": "https://github.com/jehaverlack/nwa.git"
   },
   "META_MAPS": {
     "package.json": {

@@ -1,12 +1,13 @@
 {
     "DIRS": {
-        "HOME": "~/.nwa",
-        "CONF": "HOME/conf",
-        "DOCS": "HOME/docs",
-        "LOGS": "HOME/logs",
-        "DATA": "HOME/data",
-        "SCRIPTS": "HOME/scripts",
-        "NODEJS": "HOME/nodejs"
+        "SITE": "~/.nwa",
+        "CONF": "SITE/conf",
+        "DOCS": "SITE/docs",
+        "LOGS": "SITE/logs",
+        "DATA": "SITE/data",
+        "SCRIPTS": "SITE/scripts",
+        "NODEJS": "SITE/nodejs",
+        "VERSIONS": "SITE/versions"
     },
     "NODEJS": {
         "VERSION": "24.18.0",

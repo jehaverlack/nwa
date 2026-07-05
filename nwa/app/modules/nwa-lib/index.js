@@ -34,49 +34,20 @@ function load_config() {
     .argv;
 
     // console.log("DEBUG: dirname: " + __dirname);
-    let home = path.join(__dirname, '..', '..', '..'); // HOME Default 
-    let mgr_cfg_file = path.join(home, 'conf', 'nwa-config.json');
+    let site = path.join(__dirname, '..', '..', '..', '..', '..', '..'); // site Default
+    // let base = path.join(__dirname, '..', '..', '..', '..'); // base Default
+    // let mgr_cfg_file = path.join(base, 'nwa', 'conf', 'nwa-config.json');
+    let mgr_cfg_file = path.join(site, 'conf', 'nwa-config.json');
 
-    // console.log("DEBUG: HOME: " + home);
+    // console.log("DEBUG: site: " + site);
     // console.log("DEBUG: MGR_CFG_FILE: " + mgr_cfg_file);
+
     try {
         fs.accessSync(mgr_cfg_file, fs.constants.R_OK);
     } catch (err) {
         console.error(err);
         process.exit(1);
     }
-
-    // // Load from ENV
-    // if (process.env.HOME) {
-    //     home = process.env.HOME;
-    //     mgr_cfg_file = path.join(home, 'conf', '-mgr-config.json');
-    //     // console.log("DEBUG3: HOME: " + home);
-    //     // console.log("DEBUG3: MGR_CFG_FILE: " + mgr_cfg_file);
-    //     try {
-    //         fs.accessSync(mgr_cfg_file, fs.constants.R_OK);
-    //     } catch (err) {
-    //         console.error(err);
-    //         process.exit(1);
-    //     }
-    // }
-
-    // // Load from ARGV
-    // if (argv.configfile) {
-    //     home = path.dirname(argv.configfile);
-    //     mgr_cfg_file = path.join(home, 'conf', '-mgr-config.json');
-    //     // console.log("DEBUG4: HOME: " + home);
-    //     // console.log("DEBUG4: MGR_CFG_FILE: " + mgr_cfg_file);
-    //     try {
-    //         fs.accessSync(mgr_cfg_file, fs.constants.R_OK);
-    //     } catch (err) {
-    //         console.error(err);
-    //         process.exit(1);
-    //     }
-    // }
-    
-    // console.log("DEBUG: HOME: " + home);
-    // console.log("DEBUG: MGR_CFG_FILE: " + mgr_cfg_file);    
-
 
 
     // Load Config
@@ -87,13 +58,13 @@ function load_config() {
         console.error(err);
     }
 
-    // console.log("DEBUG: home: " + home);
+    // console.log("DEBUG: site: " + site);
 
     // Expand Data Directory
     let search_replace = {}
     search_replace['DIRNAME'] = __dirname
-    // search_replace['HOME'] = home
-    config.dirs['home'] = home
+    // search_replace['site'] = site
+    config.dirs['site'] = site
     for (let d in config.dirs) {
         search_replace[d.toUpperCase()] = d
     }
@@ -131,23 +102,13 @@ function load_config() {
             fs.mkdirSync(config.dirs[d], { recursive: true });
         }
     }  
-        // for (let k in config.dependencies[d]) {
-        //     // if k matches case insensitive "dependencies" the remove elemend k.
-        //     if (k.match(/[Dd]ependencies/)) {
-        //         delete config.dependencies[d][k]
-        //     }
-
-        //     if (k.match(/scripts/)) {
-        //         delete config.dependencies[d][k]
-        //     }
-        // }
 
     // Load Package Info
     config.package = JSON.parse(fs.readFileSync(path.join(config.dirs.app, 'package.json'), 'utf8'));
     config.dependencies = {}
 
     //  Version
-    config.cluster.version = config.package.version
+    // config.nwa.version = config.package.version
 
     for (let d in config.package.dependencies) {
         config.dependencies[d] = JSON.parse(fs.readFileSync(path.join(config.dirs.app, 'node_modules', d, 'package.json'), 'utf8'));
@@ -186,7 +147,8 @@ function load_config() {
     };
 
     config.nwa = {
-        version: config.package.version
+        version: config.package.version,
+        config_file: mgr_cfg_file
     }
 
     config.identity = {
@@ -271,7 +233,7 @@ function load_config() {
 
     try {
         // console.log(JSON.stringify(config.dirs, null, 2));
-        const idinfo = load_or_create_id(config.dirs.home);
+        const idinfo = load_or_create_id(config.dirs.site);
         config.identity.id = idinfo.id;
         config.identity.created_at = idinfo.created_at;
         config.identity.hostname = config.host.hostname;
@@ -381,9 +343,9 @@ function computeBroadcast(address, netmask) {
   }
 }
 
-function load_or_create_id(home) {
-    // console.log('DEBUG: load_or_create_id() home: ' + home);
-    const id_dir = path.join(home, 'conf');
+function load_or_create_id(site) {
+    // console.log('DEBUG: load_or_create_id() site: ' + site);
+    const id_dir = path.join(site, 'conf');
     const id_file = path.join(id_dir, 'nwa-id.json');
 
     try {

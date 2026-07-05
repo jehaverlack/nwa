@@ -14,12 +14,12 @@ resolve_dirs() {
     raw["$key"]="$val"
   done < <(jq -r '.DIRS | to_entries[] | "\(.key)=\(.value)"' "$json")
 
-  if [[ -z "${raw[HOME]:-}" ]]; then
-    echo "ERROR: DIRS.HOME is not defined in config.json"
+  if [[ -z "${raw[SITE]:-}" ]]; then
+    echo "ERROR: DIRS.SITE is not defined in nwa-deploy-config.json"
     exit 1
   fi
 
-  resolved["HOME"]="${raw[HOME]/#\~/$HOME}"
+  resolved["SITE"]="${raw[SITE]/#\~/$HOME}"
 
   local changed=true
   while $changed; do
@@ -32,7 +32,21 @@ resolve_dirs() {
         val="${val/$rkey/${resolved[$rkey]:-}}"
       done
 
-      if [[ "$val" != ** ]]; then
+      # if [[ "$val" != ** ]]; then
+      #   resolved["$key"]="$val"
+      #   changed=true
+      # fi
+
+      local unresolved=false
+
+      for unresolved_key in "${!raw[@]}"; do
+        if [[ -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
+          unresolved=true
+          break
+        fi
+      done
+
+      if [[ "$unresolved" == false ]]; then
         resolved["$key"]="$val"
         changed=true
       fi
@@ -60,6 +74,93 @@ use_systemd() {
   fi
   return 1  # Use manual scripts
 }
+
+
+install_nodejs() {
+  NODE_TARGET="${OS_PLATFORM}:${OS_ARCH}"
+  NODE_PLATFORM="${OS_PLATFORM}-${OS_ARCH}"
+
+  echo ""
+  echo "Target NodeJS:"
+  echo "  Target:   $NODE_TARGET"
+  echo "  Platform: $NODE_PLATFORM"
+
+  if ! jq -e --arg target "$NODE_TARGET" '.NODEJS.TARGETS[] | select(. == $target)' "$CONFIG_FILE" >/dev/null; then
+    echo "ERROR: NodeJS target not listed in config: $NODE_TARGET"
+    exit 1
+  fi
+
+  case "$OS_PLATFORM" in
+    linux)
+      EXT="tar.xz"
+      TAR_OPTS="-xJf"
+      ;;
+    darwin)
+      EXT="tar.gz"
+      TAR_OPTS="-xzf"
+      ;;
+    win)
+      echo "ERROR: win32 host install not supported by this installer"
+      exit 1
+      ;;
+    *)
+      echo "ERROR: Unsupported OS platform: $OS_PLATFORM"
+      exit 1
+      ;;
+  esac
+
+  NODE_DIR="node-v${NODE_VERSION}-${NODE_PLATFORM}"
+  NODE_TARBALL="${NODE_DIR}.${EXT}"
+  NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+  SHASUM_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+
+  NODE_BIN="$NODEJS/current/bin/node"
+
+  if [[ -e "$NODE_BIN" ]]; then
+    NODE_BIN_VERSION="$("$NODE_BIN" --version)"
+
+    if [[ "$NODE_BIN_VERSION" == "v$NODE_VERSION" ]]; then
+      echo ""
+      echo "NodeJS $NODE_PLATFORM v$NODE_VERSION already installed"
+      return 0
+    fi
+  fi
+
+  TMP_DIR="$(mktemp -d)"
+  trap 'rm -rf "$TMP_DIR"' RETURN
+
+  echo ""
+  echo "Installing NodeJS:"
+  echo "  Version:  $NODE_VERSION"
+  echo "  Archive:  $NODE_TARBALL"
+  echo "  To:       $NODEJS"
+
+  curl -sSL "$SHASUM_URL" -o "$TMP_DIR/SHASUMS256.txt"
+  curl -sSL "$NODE_URL" -o "$TMP_DIR/$NODE_TARBALL"
+
+  EXPECTED_SHA="$(grep " $NODE_TARBALL\$" "$TMP_DIR/SHASUMS256.txt" | awk '{print $1}')"
+
+  if [[ -z "$EXPECTED_SHA" ]]; then
+    echo "ERROR: SHA256 not found for $NODE_TARBALL"
+    exit 1
+  fi
+
+  ACTUAL_SHA="$(sha256sum "$TMP_DIR/$NODE_TARBALL" | awk '{print $1}')"
+
+  if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+    echo "ERROR: SHA mismatch for $NODE_TARBALL"
+    exit 1
+  fi
+
+  rm -rf "$NODEJS/$NODE_DIR"
+  tar $TAR_OPTS "$TMP_DIR/$NODE_TARBALL" -C "$NODEJS"
+
+  ln -sfn "$NODEJS/$NODE_DIR" "$NODEJS/current"
+
+  echo "NodeJS installed:"
+  echo "  $NODEJS/current/bin/node"
+}
+
 
 # ------------------------------------------------------------
 # Main
@@ -89,7 +190,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR" && pwd)"
 
-CONFIG_FILE="$ROOT/config.json"
+CONFIG_FILE="$ROOT/nwa-deploy-config.json"
 META_FILE="$ROOT/metadata.json"
 
 [[ -f "$CONFIG_FILE" ]] || { echo "ERROR: config.json not found"; exit 1; }
@@ -175,7 +276,7 @@ VERSION_DATE="$(jq -r '.METADATA.version_date' "$META_FILE")"
 COPYRIGHT="$(jq -r '.METADATA.copyright' "$META_FILE")"
 AUTHOR="$(jq -r '.METADATA.author' "$META_FILE")"
 LICENSE="$(jq -r '.METADATA.license' "$META_FILE")"
-HOMEPAGE="$(jq -r '.METADATA.homepage' "$META_FILE")"
+SITEPAGE="$(jq -r '.METADATA.SITEpage' "$META_FILE")"
 REPO="$(jq -r '.METADATA.git_repo' "$META_FILE")"
 
 
@@ -195,7 +296,7 @@ echo "  Version Date: $VERSION_DATE"
 echo "  Copyright:    (C) $COPYRIGHT"
 echo "  Author:       $AUTHOR"
 echo "  License:      $LICENSE"
-echo "  Homepage:     $HOMEPAGE"
+echo "  SITEpage:     $SITEPAGE"
 echo "  Repository:   $REPO"
 echo ""
 
@@ -223,109 +324,83 @@ if [[ "$OS_PLATFORM" == "win32" ]]; then
 fi
 
 echo "Directories:"
-echo "  ROOT:    $ROOT"
+echo "  ROOT:        $ROOT"
 resolve_dirs "$CONFIG_FILE"
 
-
 # ------------------------------------------------------------
-# Build sdl-mgr tarball to DIST
-# Always rebuild sdl-mgr_version.tgz from source
+# Copy nwa to Prod Dir
 # ------------------------------------------------------------
 echo ""
-echo "Generating: $DIST/sdl-mgr_$VERSION.tgz"
-tar -czf "$DIST/sdl-mgr_$VERSION.tgz" -C "$ROOT" sdl-mgr
-sha256sum "$DIST/sdl-mgr_$VERSION.tgz"  | awk '{sub(".*/","",$2); print}' > "$DIST/sdl-mgr_$VERSION.tgz.sha256"
-
-# ------------------------------------------------------------
-# Build sdl-wkr tarball to DIST
-# Always rebuild sdl-wkr_version.tgz from source
-# ------------------------------------------------------------
-echo ""
-echo "Generating: $DIST/sdl-wkr_$VERSION.tgz"
-tar -czf "$DIST/sdl-wkr_$VERSION.tgz" -C "$ROOT" sdl-wkr
-sha256sum "$DIST/sdl-wkr_$VERSION.tgz"  | awk '{sub(".*/","",$2); print}' > "$DIST/sdl-wkr_$VERSION.tgz.sha256"
-
-# ------------------------------------------------------------
-# Copy install-sdl-wkr.sh to DIST
-# ------------------------------------------------------------
-echo ""
-echo "Copying: $DIST/install-sdl-wkr.sh"
-cp "$ROOT/sdl-wkr/scripts/install-sdl-wkr.sh" "$DIST/install-sdl-wkr.sh"
-sha256sum "$DIST/install-sdl-wkr.sh" | awk '{sub(".*/","",$2); print}' > "$DIST/install-sdl-wkr.sh.sha256"
+echo "Installing nwa version $VERSION to $VERSIONS/nwa_$VERSION"
+rsync -av $ROOT/nwa --exclude='node_modules' $VERSIONS/nwa_$VERSION
+# ln -s $VERSIONS/nwa_$VERSION $VERSIONS/current
+ln -sfnT "$VERSIONS/nwa_$VERSION" "$VERSIONS/current"
+NWA="$VERSIONS/current/nwa"
 
 # ------------------------------------------------------------
 # Fetch NodeJS Tarballs / Zips to DIST
 # ------------------------------------------------------------
-echo ""
-echo "Fetching NodeJS Binaries to $DIST"
-SHASUM_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
-curl -sSL "$SHASUM_URL" -o "$DIST/NODE_SHASUMS256.txt"
+install_nodejs
 
-# Download NodeJS tarball
+# echo ""
+# echo "Fetching NodeJS Binaries to $DIST"
+# SHASUM_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+# curl -sSL "$SHASUM_URL" -o "$DIST/NODE_SHASUMS256.txt"
 
-for np in $NODE_PLATFORMS; do
-  IFS=":" read -r OS ARCH <<< "$np"
+# # Download NodeJS tarball
 
-  case "$OS" in
-    linux)   EXT="tar.xz" ;;
-    darwin)  EXT="tar.gz" ;;
-    win)   EXT="zip" ;;
-    *) echo "ERROR: Unknown NodeJS target OS: $OS"; exit 1 ;;
-  esac
+# for np in $NODE_PLATFORMS; do
+#   IFS=":" read -r OS ARCH <<< "$np"
 
-  PLATFORM="${OS}-${ARCH}"
-  NODE_DIR="node-v${NODE_VERSION}-${PLATFORM}"
-  NODE_TARBALL="${NODE_DIR}.$EXT"
-  NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+#   case "$OS" in
+#     linux)   EXT="tar.xz" ;;
+#     darwin)  EXT="tar.gz" ;;
+#     win)   EXT="zip" ;;
+#     *) echo "ERROR: Unknown NodeJS target OS: $OS"; exit 1 ;;
+#   esac
 
-  echo "  $np: $NODE_TARBALL"
+#   PLATFORM="${OS}-${ARCH}"
+#   NODE_DIR="node-v${NODE_VERSION}-${PLATFORM}"
+#   NODE_TARBALL="${NODE_DIR}.$EXT"
+#   NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
 
-  if [ ! -e "$DIST/$NODE_TARBALL" ]; then
+#   echo "  $np: $NODE_TARBALL"
 
-    curl -sSL "$NODE_URL" -o "$DIST/$NODE_TARBALL"
+#   if [ ! -e "$DIST/$NODE_TARBALL" ]; then
 
-    EXPECTED_SHA="$(grep " $NODE_TARBALL\$" "$DIST/NODE_SHASUMS256.txt" | awk '{print $1}')"
+#     curl -sSL "$NODE_URL" -o "$DIST/$NODE_TARBALL"
 
-    if [[ -z "$EXPECTED_SHA" ]]; then
-        echo "Error: SHA256 not found for $NODE_TARBALL"
-        exit 1
-    fi
+#     EXPECTED_SHA="$(grep " $NODE_TARBALL\$" "$DIST/NODE_SHASUMS256.txt" | awk '{print $1}')"
 
-    ACTUAL_SHA="$(sha256sum "$DIST/$NODE_TARBALL" | awk '{print $1}')"
+#     if [[ -z "$EXPECTED_SHA" ]]; then
+#         echo "Error: SHA256 not found for $NODE_TARBALL"
+#         exit 1
+#     fi
 
-    if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-        echo "SHA mismatch $NODE_TARBALL"
-        rm -f "$DIST/$NODE_TARBALL"
-        exit 1
-    fi
+#     ACTUAL_SHA="$(sha256sum "$DIST/$NODE_TARBALL" | awk '{print $1}')"
 
-    echo "$EXPECTED_SHA  $NODE_TARBALL" > "$DIST/$NODE_TARBALL.sha256"
-  fi
-done
+#     if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+#         echo "SHA mismatch $NODE_TARBALL"
+#         rm -f "$DIST/$NODE_TARBALL"
+#         exit 1
+#     fi
+
+#     echo "$EXPECTED_SHA  $NODE_TARBALL" > "$DIST/$NODE_TARBALL.sha256"
+#   fi
+# done
 
 unset OS ARCH
 
-
 # ------------------------------------------------------------
-# Extract sdl-mgr-VERSION tarball from DIST to MGR
-# Symlink to MGR/current
-# ------------------------------------------------------------
-echo ""
-echo "Extracting: $DIST/sdl-mgr_$VERSION.tgz to $MGR/sdl-mgr_$VERSION"
-rm -rf "$MGR/sdl-mgr_$VERSION"
-tar -xzf "$DIST/sdl-mgr_$VERSION.tgz" -C "$MGR"
-mv "$MGR/sdl-mgr" "$MGR/sdl-mgr_$VERSION"
-# rm "$MGR/current"
-ln -sfn "$MGR/sdl-mgr_$VERSION" "$MGR/current"
-
-# ------------------------------------------------------------
-# Copy MGR/current/conf/efault-sdl-mgr-config.json to CONF/sdl-mgr-config.json
+# Copy NWA/current/conf/efault-nwa-config.json to CONF/nwa-config.json
 # ------------------------------------------------------------
 
-if [ ! -e "$CONF/sdl-mgr-config.json" ]; then
+if [ ! -e "$CONF/nwa-config.json" ]; then
     echo ""
-    echo "Copying: $MGR/current/conf/default-sdl-mgr-config.json to $CONF/sdl-mgr-config.json"
-    cp "$MGR/current/conf/default-sdl-mgr-config.json" "$CONF/sdl-mgr-config.json"
+    # echo "Copying: $NWA/current/conf/default-nwa-config.json to $CONF/nwa-config.json"
+    # cp "$NWA/current/conf/default-nwa-config.json" "$CONF/nwa-config.json"
+    echo "Copying: $NWA/conf/nwa-config.json to $CONF/nwa-config.json"
+    rsync -av "$NWA/conf/nwa-config.json" "$CONF/nwa-config.json"
 fi
 
 # ------------------------------------------------------------
@@ -333,56 +408,56 @@ fi
 # Symlink to NODEJS/current
 # ------------------------------------------------------------
 
-# Check if NodeJS is already installed
+# # Check if NodeJS is already installed
 NODE_BIN="$NODEJS/current/bin/node"
 NPM_BIN="$NODEJS/current/bin/npm"
 # echo "NodeJS binary: $NODE_BIN"
 
-if [ -e "$NODE_BIN" ]; then
-    NODE_BIN_VERSION="$("$NODE_BIN" --version)"
-    # echo "NodeJS bin version: $NODE_BIN_VERSION"
-    # echo "NodeJS version: v$NODE_VERSION"
-    case "$OS_PLATFORM" in
-      linux)  EXT="tar.xz"; TAR_OPTS="-xJf" ;;
-      darwin) EXT="tar.gz"; TAR_OPTS="-xzf" ;;
-      win)  EXT="zip" ;;
-      *) echo "ERROR: Unsupported OS platform: $OS_PLATFORM"; exit 1 ;;
-    esac
+# if [ -e "$NODE_BIN" ]; then
+#     NODE_BIN_VERSION="$("$NODE_BIN" --version)"
+#     # echo "NodeJS bin version: $NODE_BIN_VERSION"
+#     # echo "NodeJS version: v$NODE_VERSION"
+#     case "$OS_PLATFORM" in
+#       linux)  EXT="tar.xz"; TAR_OPTS="-xJf" ;;
+#       darwin) EXT="tar.gz"; TAR_OPTS="-xzf" ;;
+#       win)  EXT="zip" ;;
+#       *) echo "ERROR: Unsupported OS platform: $OS_PLATFORM"; exit 1 ;;
+#     esac
 
-    if [ "$NODE_BIN_VERSION" != "v$NODE_VERSION" ]; then
-        echo ""
-        echo "Installing NodeJS: node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}"
+#     if [ "$NODE_BIN_VERSION" != "v$NODE_VERSION" ]; then
+#         echo ""
+#         echo "Installing NodeJS: node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}"
     
-        echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT"
-        if [ $OS_PLATFORM == "win32" ]; then
-          echo "ERROR: win32 host install not supported by this installer"
-          exit 1
-          # unzip "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -d "$NODEJS"
-        else 
-          tar $TAR_OPTS "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -C "$NODEJS"
-        fi
-        # rm "$NODEJS/current"
-        ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-    else
-        echo ""
-        echo "NodeJS $OS_PLATFORM-$OS_ARCH v$NODE_VERSION already installed"
-    fi
-else
-    echo ""
-    echo "Installing NodeJS $NODE_VERSION"
+#         echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT"
+#         if [ $OS_PLATFORM == "win32" ]; then
+#           echo "ERROR: win32 host install not supported by this installer"
+#           exit 1
+#           # unzip "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -d "$NODEJS"
+#         else 
+#           tar $TAR_OPTS "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -C "$NODEJS"
+#         fi
+#         # rm "$NODEJS/current"
+#         ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
+#     else
+#         echo ""
+#         echo "NodeJS $OS_PLATFORM-$OS_ARCH v$NODE_VERSION already installed"
+#     fi
+# else
+#     echo ""
+#     echo "Installing NodeJS $NODE_VERSION"
     
-    echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz"
-    tar -xJf "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz" -C "$NODEJS"
-    ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-fi
+#     echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz"
+#     tar -xJf "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz" -C "$NODEJS"
+#     ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
+# fi
 
 
 # ------------------------------------------------------------
-# Install sdl-mgr Node Dependencies
+# Install nwa Node Dependencies
 # ------------------------------------------------------------
 echo ""
 echo "Installing NodeJS Dependencies"
-cd "$MGR/current/app"
+cd "$NWA/app"
 export PATH="$NODEJS/current/bin:$PATH"
 $NPM_BIN install
 
@@ -390,40 +465,40 @@ $NPM_BIN install
 # ------------------------------------------------------------
 # Copy Start / Stop Scripts
 # ------------------------------------------------------------
-mkdir -p "$HOME/scripts/"
-cp "$MGR/current/scripts/start-sdl-mgr.sh" "$HOME/scripts/"
-cp "$MGR/current/scripts/stop-sdl-mgr.sh" "$HOME/scripts/"
-cp "$MGR/current/scripts/status-sdl-mgr.sh" "$HOME/scripts/"
-chmod u+x "$HOME/scripts/"*
+mkdir -p "$SITE/scripts/"
+cp "$NWA/scripts/start-nwa.sh" "$SITE/scripts/"
+cp "$NWA/scripts/stop-nwa.sh" "$SITE/scripts/"
+cp "$NWA/scripts/status-nwa.sh" "$SITE/scripts/"
+chmod u+x "$SITE/scripts/"*
 
 
 # ------------------------------------------------------------
 # Install Systemd Unit Files
-# Copy MGR/current/scripts/sdl-mgr.service to ~/.config/systemd/user
+# Copy NWA/current/scripts/nwa.service to ~/.config/systemd/user
 # ------------------------------------------------------------
 if use_systemd; then
   echo ""
   echo "Installing SystemD Unit Files"
 
   mkdir -p ~/.config/systemd/user
-  cp "$MGR/current/scripts/sdl-mgr.service" ~/.config/systemd/user/
+  cp "$NWA/scripts/nwa.service" ~/.config/systemd/user/
 
-  "${HOME}/scripts/stop-sdl-mgr.sh"
+  "${SITE}/scripts/stop-nwa.sh"
   sleep 1
   systemctl --user daemon-reload --no-pager
 fi
 
 
 # ------------------------------------------------------------
-# Start SDL Manager
+# Start NWA
 # ------------------------------------------------------------
-"${HOME}/scripts/start-sdl-mgr.sh"
+"${SITE}/scripts/start-nwa.sh"
 sleep 2
-"${HOME}/scripts/status-sdl-mgr.sh"
+"${SITE}/scripts/status-nwa.sh"
 
 if [ $? -ne 0 ]; then
   echo ""
-  echo "ERROR: SDL Manager failed to start"
+  echo "ERROR: NWA failed to start"
   exit 1
 fi
 
@@ -432,6 +507,6 @@ fi
 
 
 echo ""
-echo "SDL Manager deployed:"
-echo "  to: $HOME"
+echo "NWA deployed:"
+echo "  to: $SITE"
 

@@ -1,19 +1,16 @@
 {
-    "cluster": {
-        "id": "haverlab",
-        "name": "Haverlab",
-        "desc": "John Haverlack's Home Lab"
+    "site": {
+        "id": "nwa",
+        "name": "Node Web App",
+        "desc": "A Node.json Web App Template"
     },
     "dirs": {
         "base": "DIRNAME/../..",
         "app": "BASE/app",
         "modules": "APP/modules",
-        "logs": "HOME/logs",
-        "data": "HOME/data",
-        "clstr": "DATA/cluster",
-        "proj": "DATA/proj",
-        "jobs": "DATA/jobs",
-        "conf": "HOME/conf",
+        "logs": "SITE/logs",
+        "data": "SITE/data",
+        "conf": "SITE/conf",
         "modconf": "BASE/conf/modules",
         "html": "BASE/html"
     },

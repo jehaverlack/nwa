@@ -6,41 +6,108 @@ set -euo pipefail
 # Functions
 # ------------------------------------------------------------
 
+# resolve_dirs() {
+#   local json="$1"
+#   declare -A raw resolved
+
+#   while IFS='=' read -r key val; do
+#     raw["$key"]="$val"
+#   done < <(jq -r '.DIRS | to_entries[] | "\(.key)=\(.value)"' "$json")
+
+#   if [[ -z "${raw[SITE]:-}" ]]; then
+#     echo "ERROR: DIRS.SITE is not defined in nwa-deploy-config.json"
+#     exit 1
+#   fi
+
+#   resolved["SITE"]="${raw[SITE]/#\~/$HOME}"
+
+#   local changed=true
+#   while $changed; do
+#     changed=false
+#     for key in "${!raw[@]}"; do
+#       [[ -n "${resolved[$key]:-}" ]] && continue
+
+#       local val="${raw[$key]}"
+#       for rkey in "${!resolved[@]}"; do
+#         val="${val/$rkey/${resolved[$rkey]:-}}"
+#       done
+
+#       # if [[ "$val" != ** ]]; then
+#       #   resolved["$key"]="$val"
+#       #   changed=true
+#       # fi
+
+#       local unresolved=false
+
+#       for unresolved_key in "${!raw[@]}"; do
+#         if [[ -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
+#           unresolved=true
+#           break
+#         fi
+#       done
+
+#       if [[ "$unresolved" == false ]]; then
+#         resolved["$key"]="$val"
+#         changed=true
+#       fi
+#     done
+#   done
+
+#   for key in "${!raw[@]}"; do
+#     [[ -z "${resolved[$key]:-}" ]] && {
+#       echo "ERROR: Unresolved DIR: $key=${raw[$key]}"
+#       exit 1
+#     }
+#   done
+
+#   for key in "${!resolved[@]}"; do
+#     export "$key=${resolved[$key]}"
+#     printf "  %-12s %s\n" "$key:" "${resolved[$key]}"
+#     mkdir -p "${resolved[$key]}"
+#   done
+# }
+
 resolve_dirs() {
   local json="$1"
+  local sitename="$2"
   declare -A raw resolved
+
+  if [[ -z "$sitename" || "$sitename" == "null" ]]; then
+    echo "ERROR: METADATA.name is not defined in metadata.json"
+    exit 1
+  fi
+
+  # Basic safety: deployment directory name should be simple.
+  if [[ ! "$sitename" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "ERROR: Invalid METADATA.name for deploy directory: $sitename"
+    echo "       Allowed characters: A-Z a-z 0-9 . _ -"
+    exit 1
+  fi
 
   while IFS='=' read -r key val; do
     raw["$key"]="$val"
   done < <(jq -r '.DIRS | to_entries[] | "\(.key)=\(.value)"' "$json")
 
-  if [[ -z "${raw[SITE]:-}" ]]; then
-    echo "ERROR: DIRS.SITE is not defined in nwa-deploy-config.json"
-    exit 1
-  fi
-
-  resolved["SITE"]="${raw[SITE]/#\~/$HOME}"
+  # SITE is derived from metadata.json, not from deploy config.
+  resolved["SITE"]="$HOME/.$sitename"
 
   local changed=true
   while $changed; do
     changed=false
     for key in "${!raw[@]}"; do
+      [[ "$key" == "SITE" ]] && continue
       [[ -n "${resolved[$key]:-}" ]] && continue
 
       local val="${raw[$key]}"
+
       for rkey in "${!resolved[@]}"; do
         val="${val/$rkey/${resolved[$rkey]:-}}"
       done
 
-      # if [[ "$val" != ** ]]; then
-      #   resolved["$key"]="$val"
-      #   changed=true
-      # fi
-
       local unresolved=false
 
       for unresolved_key in "${!raw[@]}"; do
-        if [[ -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
+        if [[ "$unresolved_key" != "SITE" && -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
           unresolved=true
           break
         fi
@@ -54,6 +121,8 @@ resolve_dirs() {
   done
 
   for key in "${!raw[@]}"; do
+    [[ "$key" == "SITE" ]] && continue
+
     [[ -z "${resolved[$key]:-}" ]] && {
       echo "ERROR: Unresolved DIR: $key=${raw[$key]}"
       exit 1
@@ -66,6 +135,8 @@ resolve_dirs() {
     mkdir -p "${resolved[$key]}"
   done
 }
+
+
 
 use_systemd() {
   # Check if systemd user mode is available and service exists
@@ -270,13 +341,13 @@ fi
 # ------------------------------------------------------------
 # Setting variables
 # ------------------------------------------------------------
-
+SITENAME="$(jq -r '.METADATA.name' "$META_FILE")"
 VERSION="$(jq -r '.METADATA.version' "$META_FILE")"
 VERSION_DATE="$(jq -r '.METADATA.version_date' "$META_FILE")"
 COPYRIGHT="$(jq -r '.METADATA.copyright' "$META_FILE")"
 AUTHOR="$(jq -r '.METADATA.author' "$META_FILE")"
 LICENSE="$(jq -r '.METADATA.license' "$META_FILE")"
-SITEPAGE="$(jq -r '.METADATA.SITEpage' "$META_FILE")"
+HOMEPAGE="$(jq -r '.METADATA.homepage' "$META_FILE")"
 REPO="$(jq -r '.METADATA.git_repo' "$META_FILE")"
 
 
@@ -291,12 +362,13 @@ NODE_PLATFORMS="${NODE_PLATFORMS%% }"
 echo "####################################"
 echo "Node Web App (NWA)"
 echo "####################################"
+echo "  Sitename:     $SITENAME"
 echo "  Version:      $VERSION"
 echo "  Version Date: $VERSION_DATE"
 echo "  Copyright:    (C) $COPYRIGHT"
 echo "  Author:       $AUTHOR"
 echo "  License:      $LICENSE"
-echo "  SITEpage:     $SITEPAGE"
+echo "  Homepage:     $HOMEPAGE"
 echo "  Repository:   $REPO"
 echo ""
 
@@ -325,7 +397,8 @@ fi
 
 echo "Directories:"
 echo "  ROOT:        $ROOT"
-resolve_dirs "$CONFIG_FILE"
+# resolve_dirs "$CONFIG_FILE"
+resolve_dirs "$CONFIG_FILE" "$SITENAME"
 
 # ------------------------------------------------------------
 # Copy nwa to Prod Dir

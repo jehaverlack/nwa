@@ -1,6 +1,7 @@
 {
   "METADATA": {
     "name": "nwa",
+    "project": "Node Web App",
     "description": "Node Web App",
     "abbr": "NWA",
     "version": "0.1.2",

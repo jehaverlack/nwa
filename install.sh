@@ -415,53 +415,6 @@ NWA="$VERSIONS/current/nwa"
 # ------------------------------------------------------------
 install_nodejs
 
-# echo ""
-# echo "Fetching NodeJS Binaries to $DIST"
-# SHASUM_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
-# curl -sSL "$SHASUM_URL" -o "$DIST/NODE_SHASUMS256.txt"
-
-# # Download NodeJS tarball
-
-# for np in $NODE_PLATFORMS; do
-#   IFS=":" read -r OS ARCH <<< "$np"
-
-#   case "$OS" in
-#     linux)   EXT="tar.xz" ;;
-#     darwin)  EXT="tar.gz" ;;
-#     win)   EXT="zip" ;;
-#     *) echo "ERROR: Unknown NodeJS target OS: $OS"; exit 1 ;;
-#   esac
-
-#   PLATFORM="${OS}-${ARCH}"
-#   NODE_DIR="node-v${NODE_VERSION}-${PLATFORM}"
-#   NODE_TARBALL="${NODE_DIR}.$EXT"
-#   NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
-
-#   echo "  $np: $NODE_TARBALL"
-
-#   if [ ! -e "$DIST/$NODE_TARBALL" ]; then
-
-#     curl -sSL "$NODE_URL" -o "$DIST/$NODE_TARBALL"
-
-#     EXPECTED_SHA="$(grep " $NODE_TARBALL\$" "$DIST/NODE_SHASUMS256.txt" | awk '{print $1}')"
-
-#     if [[ -z "$EXPECTED_SHA" ]]; then
-#         echo "Error: SHA256 not found for $NODE_TARBALL"
-#         exit 1
-#     fi
-
-#     ACTUAL_SHA="$(sha256sum "$DIST/$NODE_TARBALL" | awk '{print $1}')"
-
-#     if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-#         echo "SHA mismatch $NODE_TARBALL"
-#         rm -f "$DIST/$NODE_TARBALL"
-#         exit 1
-#     fi
-
-#     echo "$EXPECTED_SHA  $NODE_TARBALL" > "$DIST/$NODE_TARBALL.sha256"
-#   fi
-# done
-
 unset OS ARCH
 
 # ------------------------------------------------------------
@@ -486,44 +439,6 @@ NODE_BIN="$NODEJS/current/bin/node"
 NPM_BIN="$NODEJS/current/bin/npm"
 # echo "NodeJS binary: $NODE_BIN"
 
-# if [ -e "$NODE_BIN" ]; then
-#     NODE_BIN_VERSION="$("$NODE_BIN" --version)"
-#     # echo "NodeJS bin version: $NODE_BIN_VERSION"
-#     # echo "NodeJS version: v$NODE_VERSION"
-#     case "$OS_PLATFORM" in
-#       linux)  EXT="tar.xz"; TAR_OPTS="-xJf" ;;
-#       darwin) EXT="tar.gz"; TAR_OPTS="-xzf" ;;
-#       win)  EXT="zip" ;;
-#       *) echo "ERROR: Unsupported OS platform: $OS_PLATFORM"; exit 1 ;;
-#     esac
-
-#     if [ "$NODE_BIN_VERSION" != "v$NODE_VERSION" ]; then
-#         echo ""
-#         echo "Installing NodeJS: node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}"
-    
-#         echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT"
-#         if [ $OS_PLATFORM == "win32" ]; then
-#           echo "ERROR: win32 host install not supported by this installer"
-#           exit 1
-#           # unzip "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -d "$NODEJS"
-#         else 
-#           tar $TAR_OPTS "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -C "$NODEJS"
-#         fi
-#         # rm "$NODEJS/current"
-#         ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-#     else
-#         echo ""
-#         echo "NodeJS $OS_PLATFORM-$OS_ARCH v$NODE_VERSION already installed"
-#     fi
-# else
-#     echo ""
-#     echo "Installing NodeJS $NODE_VERSION"
-    
-#     echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz"
-#     tar -xJf "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz" -C "$NODEJS"
-#     ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-# fi
-
 
 # ------------------------------------------------------------
 # Install nwa Node Dependencies
@@ -546,21 +461,49 @@ chmod u+x "$SITE/scripts/"*
 
 
 # ------------------------------------------------------------
-# Install Systemd Unit Files
-# Copy NWA/current/scripts/nwa.service to ~/.config/systemd/user
+# Install Systemd Unit File
+# Copy SITENAME.service template to ~/.config/systemd/user/${SITENAME}.service
 # ------------------------------------------------------------
 if use_systemd; then
   echo ""
-  echo "Installing SystemD Unit Files"
+  echo "Installing SystemD Unit File"
 
-  mkdir -p ~/.config/systemd/user
-  cp "$NWA/scripts/nwa.service" ~/.config/systemd/user/
+  USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+  SERVICE_NAME="${SITENAME}.service"
+  SERVICE_TEMPLATE="$NWA/scripts/SITENAME.service"
+  SERVICE_FILE="$USER_SYSTEMD_DIR/$SERVICE_NAME"
 
-  "${SITE}/scripts/stop-nwa.sh"
-  sleep 1
-  systemctl --user daemon-reload --no-pager
+  if [[ ! -f "$SERVICE_TEMPLATE" ]]; then
+    echo "ERROR: systemd service template not found: $SERVICE_TEMPLATE"
+    exit 1
+  fi
+
+  mkdir -p "$USER_SYSTEMD_DIR"
+
+  # Stop existing service if present
+  systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+
+  # Optional: disable old hardcoded nwa.service if this install is now metadata-named
+  if [[ "$SERVICE_NAME" != "nwa.service" ]]; then
+    systemctl --user stop nwa.service >/dev/null 2>&1 || true
+    systemctl --user disable nwa.service >/dev/null 2>&1 || true
+  fi
+
+  # Render template
+  sed \
+    -e "s#SITENAME#${SITENAME}#g" \
+    -e "s#DESCRIPTION#${DESCRIPTION}#g" \
+    "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
+
+  systemctl --user daemon-reload
+  systemd-analyze --user verify "$SERVICE_FILE"
+
+  systemctl --user enable "$SERVICE_NAME"
+  systemctl --user restart "$SERVICE_NAME"
+
+  echo "Installed systemd user service:"
+  echo "  $SERVICE_NAME"
 fi
-
 
 # ------------------------------------------------------------
 # Start NWA

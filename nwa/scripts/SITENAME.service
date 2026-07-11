@@ -1,5 +1,5 @@
 [Unit]
-Description=DESCRIPTION
+Description=PROJECT
 After=network.target
 
 [Service]

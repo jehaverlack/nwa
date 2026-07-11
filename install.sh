@@ -6,67 +6,6 @@ set -euo pipefail
 # Functions
 # ------------------------------------------------------------
 
-# resolve_dirs() {
-#   local json="$1"
-#   declare -A raw resolved
-
-#   while IFS='=' read -r key val; do
-#     raw["$key"]="$val"
-#   done < <(jq -r '.DIRS | to_entries[] | "\(.key)=\(.value)"' "$json")
-
-#   if [[ -z "${raw[SITE]:-}" ]]; then
-#     echo "ERROR: DIRS.SITE is not defined in nwa-deploy-config.json"
-#     exit 1
-#   fi
-
-#   resolved["SITE"]="${raw[SITE]/#\~/$HOME}"
-
-#   local changed=true
-#   while $changed; do
-#     changed=false
-#     for key in "${!raw[@]}"; do
-#       [[ -n "${resolved[$key]:-}" ]] && continue
-
-#       local val="${raw[$key]}"
-#       for rkey in "${!resolved[@]}"; do
-#         val="${val/$rkey/${resolved[$rkey]:-}}"
-#       done
-
-#       # if [[ "$val" != ** ]]; then
-#       #   resolved["$key"]="$val"
-#       #   changed=true
-#       # fi
-
-#       local unresolved=false
-
-#       for unresolved_key in "${!raw[@]}"; do
-#         if [[ -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
-#           unresolved=true
-#           break
-#         fi
-#       done
-
-#       if [[ "$unresolved" == false ]]; then
-#         resolved["$key"]="$val"
-#         changed=true
-#       fi
-#     done
-#   done
-
-#   for key in "${!raw[@]}"; do
-#     [[ -z "${resolved[$key]:-}" ]] && {
-#       echo "ERROR: Unresolved DIR: $key=${raw[$key]}"
-#       exit 1
-#     }
-#   done
-
-#   for key in "${!resolved[@]}"; do
-#     export "$key=${resolved[$key]}"
-#     printf "  %-12s %s\n" "$key:" "${resolved[$key]}"
-#     mkdir -p "${resolved[$key]}"
-#   done
-# }
-
 resolve_dirs() {
   local json="$1"
   local sitename="$2"
@@ -342,6 +281,8 @@ fi
 # Setting variables
 # ------------------------------------------------------------
 SITENAME="$(jq -r '.METADATA.name' "$META_FILE")"
+PROJECT="$(jq -r '.METADATA.project' "$META_FILE")"
+DESCRIPTION="$(jq -r '.METADATA.description // .METADATA.name' "$META_FILE")"
 VERSION="$(jq -r '.METADATA.version' "$META_FILE")"
 VERSION_DATE="$(jq -r '.METADATA.version_date' "$META_FILE")"
 COPYRIGHT="$(jq -r '.METADATA.copyright' "$META_FILE")"
@@ -418,15 +359,28 @@ install_nodejs
 unset OS ARCH
 
 # ------------------------------------------------------------
-# Copy NWA/current/conf/efault-nwa-config.json to CONF/nwa-config.json
+# Copy NWA/current/conf/default-nwa-config.json to CONF/nwa-config.json
 # ------------------------------------------------------------
 
 if [ ! -e "$CONF/nwa-config.json" ]; then
     echo ""
-    # echo "Copying: $NWA/current/conf/default-nwa-config.json to $CONF/nwa-config.json"
-    # cp "$NWA/current/conf/default-nwa-config.json" "$CONF/nwa-config.json"
     echo "Copying: $NWA/conf/nwa-config.json to $CONF/nwa-config.json"
     rsync -av "$NWA/conf/nwa-config.json" "$CONF/nwa-config.json"
+
+    echo "Updating site metadata in $CONF/nwa-config.json"
+
+    tmp_config="$(mktemp)"
+    jq \
+      --arg id "$SITENAME" \
+      --arg name "$PROJECT" \
+      --arg desc "$DESCRIPTION" \
+      '
+      .site.id = $id
+      | .site.name = $name
+      | .site.desc = $desc
+      ' "$CONF/nwa-config.json" > "$tmp_config"
+
+    mv "$tmp_config" "$CONF/nwa-config.json"
 fi
 
 # ------------------------------------------------------------
@@ -453,12 +407,11 @@ $NPM_BIN install
 # ------------------------------------------------------------
 # Copy Start / Stop Scripts
 # ------------------------------------------------------------
-mkdir -p "$SITE/scripts/"
-cp "$NWA/scripts/start-nwa.sh" "$SITE/scripts/"
-cp "$NWA/scripts/stop-nwa.sh" "$SITE/scripts/"
-cp "$NWA/scripts/status-nwa.sh" "$SITE/scripts/"
-chmod u+x "$SITE/scripts/"*
-
+# mkdir -p "$SITE/scripts/"
+# cp "$NWA/scripts/start-nwa.sh" "$SITE/scripts/"
+# cp "$NWA/scripts/stop-nwa.sh" "$SITE/scripts/"
+# cp "$NWA/scripts/status-nwa.sh" "$SITE/scripts/"
+# chmod u+x "$SITE/scripts/"*
 
 # ------------------------------------------------------------
 # Install Systemd Unit File
@@ -492,7 +445,7 @@ if use_systemd; then
   # Render template
   sed \
     -e "s#SITENAME#${SITENAME}#g" \
-    -e "s#DESCRIPTION#${DESCRIPTION}#g" \
+    -e "s#PROJECT#${PROJECT}#g" \
     "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
 
   systemctl --user daemon-reload
@@ -503,23 +456,11 @@ if use_systemd; then
 
   echo "Installed systemd user service:"
   echo "  $SERVICE_NAME"
+
+  systemctl --user start "$SERVICE_NAME"
+  systemctl --user --no-pager status "$SERVICE_NAME"
 fi
 
-# ------------------------------------------------------------
-# Start NWA
-# ------------------------------------------------------------
-"${SITE}/scripts/start-nwa.sh"
-sleep 2
-"${SITE}/scripts/status-nwa.sh"
-
-if [ $? -ne 0 ]; then
-  echo ""
-  echo "ERROR: NWA failed to start"
-  exit 1
-fi
-
-
-# 
 
 
 echo ""

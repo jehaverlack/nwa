@@ -4,6 +4,7 @@
     "project": "Node Web App",
     "description": "Node Web App",
     "abbr": "NWA",
+    "icon": "fa-solid fa-dice-d20",
     "version": "0.1.2",
     "version_date": "2026-07-04",
     "maturity": "PROD",

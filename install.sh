@@ -291,6 +291,7 @@ LICENSE="$(jq -r '.METADATA.license' "$META_FILE")"
 HOMEPAGE="$(jq -r '.METADATA.homepage' "$META_FILE")"
 REPO="$(jq -r '.METADATA.git_repo' "$META_FILE")"
 
+USERNAME="$(id -un)"
 
 # ------------------------------------------------------------
 # NodeJS detection
@@ -446,6 +447,7 @@ if use_systemd; then
   sed \
     -e "s#SITENAME#${SITENAME}#g" \
     -e "s#PROJECT#${PROJECT}#g" \
+    -e "s#USERNAME#${USERNAME}#g" \
     "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
 
   systemctl --user daemon-reload

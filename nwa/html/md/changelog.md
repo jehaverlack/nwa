@@ -10,6 +10,7 @@
 
 ## v0.1.2 - 2026-07-17 (PROD)
 
+- v0.1.2
 - App Updates from HaverLab
 - Fixing Installer
 - Updating Metadata
@@ -29,6 +30,7 @@
 
 ## v0.1.0 - 2026-06-28 (INIT)
 
+- v0.1.2
 - App Updates from HaverLab
 - Fixing Installer
 - Updating Metadata

@@ -27,6 +27,21 @@ app.get('/api/config', (req, res) => {
     log(module + ':  WEBAPI: ' + JSON.stringify(webreqmeta))
 });
 
+// nwa Config as JSON
+app.get('/api/nwaconf', (req, res) => {
+    const nwaconfPath = (path.join(config.dirs.html, 'conf', 'nwa.json'));
+  
+    try {
+      const nwaconfData = JSON.parse(fs.readFileSync(nwaconfPath, 'utf8'));
+      res.json(nwaconfData);
+  
+      log(module + ':  INFO: GET /api/nwaconf');
+    } catch (err) {
+      log(`ERROR: GET /api/nwaconf failed: ${err}`);
+      res.status(500).json({ error: 'Failed to load nwa.json' });
+    }
+});
+
 // Serve sidepanel nav as JSON
 app.get('/api/nav/sidepanel', (req, res) => {
   const sideMenuPath = path.join(

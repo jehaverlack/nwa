@@ -8,39 +8,45 @@ set -euo pipefail
 
 resolve_dirs() {
   local json="$1"
+  local sitename="$2"
   declare -A raw resolved
+
+  if [[ -z "$sitename" || "$sitename" == "null" ]]; then
+    echo "ERROR: METADATA.name is not defined in metadata.json"
+    exit 1
+  fi
+
+  # Basic safety: deployment directory name should be simple.
+  if [[ ! "$sitename" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "ERROR: Invalid METADATA.name for deploy directory: $sitename"
+    echo "       Allowed characters: A-Z a-z 0-9 . _ -"
+    exit 1
+  fi
 
   while IFS='=' read -r key val; do
     raw["$key"]="$val"
   done < <(jq -r '.DIRS | to_entries[] | "\(.key)=\(.value)"' "$json")
 
-  if [[ -z "${raw[SITE]:-}" ]]; then
-    echo "ERROR: DIRS.SITE is not defined in nwa-deploy-config.json"
-    exit 1
-  fi
-
-  resolved["SITE"]="${raw[SITE]/#\~/$HOME}"
+  # SITE is derived from metadata.json, not from deploy config.
+  resolved["SITE"]="$HOME/.$sitename"
 
   local changed=true
   while $changed; do
     changed=false
     for key in "${!raw[@]}"; do
+      [[ "$key" == "SITE" ]] && continue
       [[ -n "${resolved[$key]:-}" ]] && continue
 
       local val="${raw[$key]}"
+
       for rkey in "${!resolved[@]}"; do
         val="${val/$rkey/${resolved[$rkey]:-}}"
       done
 
-      # if [[ "$val" != ** ]]; then
-      #   resolved["$key"]="$val"
-      #   changed=true
-      # fi
-
       local unresolved=false
 
       for unresolved_key in "${!raw[@]}"; do
-        if [[ -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
+        if [[ "$unresolved_key" != "SITE" && -z "${resolved[$unresolved_key]:-}" && "$val" == *"$unresolved_key"* ]]; then
           unresolved=true
           break
         fi
@@ -54,6 +60,8 @@ resolve_dirs() {
   done
 
   for key in "${!raw[@]}"; do
+    [[ "$key" == "SITE" ]] && continue
+
     [[ -z "${resolved[$key]:-}" ]] && {
       echo "ERROR: Unresolved DIR: $key=${raw[$key]}"
       exit 1
@@ -66,6 +74,8 @@ resolve_dirs() {
     mkdir -p "${resolved[$key]}"
   done
 }
+
+
 
 use_systemd() {
   # Check if systemd user mode is available and service exists
@@ -270,15 +280,18 @@ fi
 # ------------------------------------------------------------
 # Setting variables
 # ------------------------------------------------------------
-
+SITENAME="$(jq -r '.METADATA.name' "$META_FILE")"
+PROJECT="$(jq -r '.METADATA.project' "$META_FILE")"
+DESCRIPTION="$(jq -r '.METADATA.description // .METADATA.name' "$META_FILE")"
 VERSION="$(jq -r '.METADATA.version' "$META_FILE")"
 VERSION_DATE="$(jq -r '.METADATA.version_date' "$META_FILE")"
 COPYRIGHT="$(jq -r '.METADATA.copyright' "$META_FILE")"
 AUTHOR="$(jq -r '.METADATA.author' "$META_FILE")"
 LICENSE="$(jq -r '.METADATA.license' "$META_FILE")"
-SITEPAGE="$(jq -r '.METADATA.SITEpage' "$META_FILE")"
+HOMEPAGE="$(jq -r '.METADATA.homepage' "$META_FILE")"
 REPO="$(jq -r '.METADATA.git_repo' "$META_FILE")"
 
+USERNAME="$(id -un)"
 
 # ------------------------------------------------------------
 # NodeJS detection
@@ -291,12 +304,13 @@ NODE_PLATFORMS="${NODE_PLATFORMS%% }"
 echo "####################################"
 echo "Node Web App (NWA)"
 echo "####################################"
+echo "  Sitename:     $SITENAME"
 echo "  Version:      $VERSION"
 echo "  Version Date: $VERSION_DATE"
 echo "  Copyright:    (C) $COPYRIGHT"
 echo "  Author:       $AUTHOR"
 echo "  License:      $LICENSE"
-echo "  SITEpage:     $SITEPAGE"
+echo "  Homepage:     $HOMEPAGE"
 echo "  Repository:   $REPO"
 echo ""
 
@@ -325,7 +339,8 @@ fi
 
 echo "Directories:"
 echo "  ROOT:        $ROOT"
-resolve_dirs "$CONFIG_FILE"
+# resolve_dirs "$CONFIG_FILE"
+resolve_dirs "$CONFIG_FILE" "$SITENAME"
 
 # ------------------------------------------------------------
 # Copy nwa to Prod Dir
@@ -342,65 +357,31 @@ NWA="$VERSIONS/current/nwa"
 # ------------------------------------------------------------
 install_nodejs
 
-# echo ""
-# echo "Fetching NodeJS Binaries to $DIST"
-# SHASUM_URL="https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
-# curl -sSL "$SHASUM_URL" -o "$DIST/NODE_SHASUMS256.txt"
-
-# # Download NodeJS tarball
-
-# for np in $NODE_PLATFORMS; do
-#   IFS=":" read -r OS ARCH <<< "$np"
-
-#   case "$OS" in
-#     linux)   EXT="tar.xz" ;;
-#     darwin)  EXT="tar.gz" ;;
-#     win)   EXT="zip" ;;
-#     *) echo "ERROR: Unknown NodeJS target OS: $OS"; exit 1 ;;
-#   esac
-
-#   PLATFORM="${OS}-${ARCH}"
-#   NODE_DIR="node-v${NODE_VERSION}-${PLATFORM}"
-#   NODE_TARBALL="${NODE_DIR}.$EXT"
-#   NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
-
-#   echo "  $np: $NODE_TARBALL"
-
-#   if [ ! -e "$DIST/$NODE_TARBALL" ]; then
-
-#     curl -sSL "$NODE_URL" -o "$DIST/$NODE_TARBALL"
-
-#     EXPECTED_SHA="$(grep " $NODE_TARBALL\$" "$DIST/NODE_SHASUMS256.txt" | awk '{print $1}')"
-
-#     if [[ -z "$EXPECTED_SHA" ]]; then
-#         echo "Error: SHA256 not found for $NODE_TARBALL"
-#         exit 1
-#     fi
-
-#     ACTUAL_SHA="$(sha256sum "$DIST/$NODE_TARBALL" | awk '{print $1}')"
-
-#     if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
-#         echo "SHA mismatch $NODE_TARBALL"
-#         rm -f "$DIST/$NODE_TARBALL"
-#         exit 1
-#     fi
-
-#     echo "$EXPECTED_SHA  $NODE_TARBALL" > "$DIST/$NODE_TARBALL.sha256"
-#   fi
-# done
-
 unset OS ARCH
 
 # ------------------------------------------------------------
-# Copy NWA/current/conf/efault-nwa-config.json to CONF/nwa-config.json
+# Copy NWA/current/conf/default-nwa-config.json to CONF/nwa-config.json
 # ------------------------------------------------------------
 
 if [ ! -e "$CONF/nwa-config.json" ]; then
     echo ""
-    # echo "Copying: $NWA/current/conf/default-nwa-config.json to $CONF/nwa-config.json"
-    # cp "$NWA/current/conf/default-nwa-config.json" "$CONF/nwa-config.json"
     echo "Copying: $NWA/conf/nwa-config.json to $CONF/nwa-config.json"
     rsync -av "$NWA/conf/nwa-config.json" "$CONF/nwa-config.json"
+
+    echo "Updating site metadata in $CONF/nwa-config.json"
+
+    tmp_config="$(mktemp)"
+    jq \
+      --arg id "$SITENAME" \
+      --arg name "$PROJECT" \
+      --arg desc "$DESCRIPTION" \
+      '
+      .site.id = $id
+      | .site.name = $name
+      | .site.desc = $desc
+      ' "$CONF/nwa-config.json" > "$tmp_config"
+
+    mv "$tmp_config" "$CONF/nwa-config.json"
 fi
 
 # ------------------------------------------------------------
@@ -412,44 +393,6 @@ fi
 NODE_BIN="$NODEJS/current/bin/node"
 NPM_BIN="$NODEJS/current/bin/npm"
 # echo "NodeJS binary: $NODE_BIN"
-
-# if [ -e "$NODE_BIN" ]; then
-#     NODE_BIN_VERSION="$("$NODE_BIN" --version)"
-#     # echo "NodeJS bin version: $NODE_BIN_VERSION"
-#     # echo "NodeJS version: v$NODE_VERSION"
-#     case "$OS_PLATFORM" in
-#       linux)  EXT="tar.xz"; TAR_OPTS="-xJf" ;;
-#       darwin) EXT="tar.gz"; TAR_OPTS="-xzf" ;;
-#       win)  EXT="zip" ;;
-#       *) echo "ERROR: Unsupported OS platform: $OS_PLATFORM"; exit 1 ;;
-#     esac
-
-#     if [ "$NODE_BIN_VERSION" != "v$NODE_VERSION" ]; then
-#         echo ""
-#         echo "Installing NodeJS: node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}"
-    
-#         echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT"
-#         if [ $OS_PLATFORM == "win32" ]; then
-#           echo "ERROR: win32 host install not supported by this installer"
-#           exit 1
-#           # unzip "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -d "$NODEJS"
-#         else 
-#           tar $TAR_OPTS "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.$EXT" -C "$NODEJS"
-#         fi
-#         # rm "$NODEJS/current"
-#         ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-#     else
-#         echo ""
-#         echo "NodeJS $OS_PLATFORM-$OS_ARCH v$NODE_VERSION already installed"
-#     fi
-# else
-#     echo ""
-#     echo "Installing NodeJS $NODE_VERSION"
-    
-#     echo "Extracting: $DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz"
-#     tar -xJf "$DIST/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}.tar.xz" -C "$NODEJS"
-#     ln -sfn "$NODEJS/node-v${NODE_VERSION}-${OS_PLATFORM}-${OS_ARCH}" "$NODEJS/current"
-# fi
 
 
 # ------------------------------------------------------------
@@ -465,45 +408,61 @@ $NPM_BIN install
 # ------------------------------------------------------------
 # Copy Start / Stop Scripts
 # ------------------------------------------------------------
-mkdir -p "$SITE/scripts/"
-cp "$NWA/scripts/start-nwa.sh" "$SITE/scripts/"
-cp "$NWA/scripts/stop-nwa.sh" "$SITE/scripts/"
-cp "$NWA/scripts/status-nwa.sh" "$SITE/scripts/"
-chmod u+x "$SITE/scripts/"*
-
+# mkdir -p "$SITE/scripts/"
+# cp "$NWA/scripts/start-nwa.sh" "$SITE/scripts/"
+# cp "$NWA/scripts/stop-nwa.sh" "$SITE/scripts/"
+# cp "$NWA/scripts/status-nwa.sh" "$SITE/scripts/"
+# chmod u+x "$SITE/scripts/"*
 
 # ------------------------------------------------------------
-# Install Systemd Unit Files
-# Copy NWA/current/scripts/nwa.service to ~/.config/systemd/user
+# Install Systemd Unit File
+# Copy SITENAME.service template to ~/.config/systemd/user/${SITENAME}.service
 # ------------------------------------------------------------
 if use_systemd; then
   echo ""
-  echo "Installing SystemD Unit Files"
+  echo "Installing SystemD Unit File"
 
-  mkdir -p ~/.config/systemd/user
-  cp "$NWA/scripts/nwa.service" ~/.config/systemd/user/
+  USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+  SERVICE_NAME="${SITENAME}.service"
+  SERVICE_TEMPLATE="$NWA/scripts/SITENAME.service"
+  SERVICE_FILE="$USER_SYSTEMD_DIR/$SERVICE_NAME"
 
-  "${SITE}/scripts/stop-nwa.sh"
-  sleep 1
-  systemctl --user daemon-reload --no-pager
+  if [[ ! -f "$SERVICE_TEMPLATE" ]]; then
+    echo "ERROR: systemd service template not found: $SERVICE_TEMPLATE"
+    exit 1
+  fi
+
+  mkdir -p "$USER_SYSTEMD_DIR"
+
+  # Stop existing service if present
+  systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+
+  # Optional: disable old hardcoded nwa.service if this install is now metadata-named
+  if [[ "$SERVICE_NAME" != "nwa.service" ]]; then
+    systemctl --user stop nwa.service >/dev/null 2>&1 || true
+    systemctl --user disable nwa.service >/dev/null 2>&1 || true
+  fi
+
+  # Render template
+  sed \
+    -e "s#SITENAME#${SITENAME}#g" \
+    -e "s#PROJECT#${PROJECT}#g" \
+    -e "s#USERNAME#${USERNAME}#g" \
+    "$SERVICE_TEMPLATE" > "$SERVICE_FILE"
+
+  systemctl --user daemon-reload
+  systemd-analyze --user verify "$SERVICE_FILE"
+
+  systemctl --user enable "$SERVICE_NAME"
+  systemctl --user restart "$SERVICE_NAME"
+
+  echo "Installed systemd user service:"
+  echo "  $SERVICE_NAME"
+
+  systemctl --user start "$SERVICE_NAME"
+  systemctl --user --no-pager status "$SERVICE_NAME"
 fi
 
-
-# ------------------------------------------------------------
-# Start NWA
-# ------------------------------------------------------------
-"${SITE}/scripts/start-nwa.sh"
-sleep 2
-"${SITE}/scripts/status-nwa.sh"
-
-if [ $? -ne 0 ]; then
-  echo ""
-  echo "ERROR: NWA failed to start"
-  exit 1
-fi
-
-
-# 
 
 
 echo ""

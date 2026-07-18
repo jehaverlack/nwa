@@ -1,3 +1,4 @@
+// weblib.js
 // Dynamically include fragments
 async function includeFragment(id, url) {
     const res = await fetch(url);
@@ -21,7 +22,9 @@ async function loadMarkdown(page) {
     ]);
 
     const navItems = await navRes.json();
-    const sideNav = await sideNavRes.json();
+    // const sideNav = await sideNavRes.json();
+    const sideNavConfig = await sideNavRes.json();
+    const sideNav = sideNavConfig.NAV_ITEMS || {};
 
     // ---- Locate metadata (nav.json first, then nav-sidepanel.json) ----
     let meta = null;
@@ -150,6 +153,35 @@ async function loadPageScript(page) {
   }
 }
 
+export async function loadNwaConfig() {
+  const res = await fetch('/api/nwaconf', {
+    cache: 'no-store'
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to load NWA config: HTTP ${res.status}`
+    );
+  }
+
+  return await res.json();
+}
+
+export function resolveTheme(nwaConfig = {}) {
+  const savedTheme = localStorage.getItem('theme');
+
+  if (savedTheme === 'dark' || savedTheme === 'light') {
+    return savedTheme;
+  }
+
+  const defaultTheme = nwaConfig?.APPEARANCE?.default_theme;
+
+  if (defaultTheme === 'dark' || defaultTheme === 'light') {
+    return defaultTheme;
+  }
+
+  return 'dark';
+}
 
   // Load Nav
 function loadNav() {
@@ -271,37 +303,6 @@ function loadNav() {
       navContainer.innerHTML = '';
       navContainer.appendChild(navEl);
 
-      // --------- MANUAL DROPDOWN HANDLERS ---------
-      // const dropdownToggles = navContainer.querySelectorAll('.nav-item.dropdown > .dropdown-toggle');
-
-      // dropdownToggles.forEach(toggle => {
-      //   toggle.addEventListener('click', evt => {
-      //     evt.preventDefault();
-
-      //     const parentLi = toggle.parentElement;
-      //     const menu = parentLi.querySelector('.dropdown-menu');
-      //     const isShown = menu.classList.contains('show');
-
-      //     // close all others
-      //     navContainer.querySelectorAll('.dropdown-menu.show').forEach(openMenu => {
-      //       openMenu.classList.remove('show');
-      //     });
-
-      //     // toggle current
-      //     if (!isShown) {
-      //       menu.classList.add('show');
-      //     }
-      //   });
-      // });
-
-      // // close dropdown when clicking outside nav
-      // document.addEventListener('click', evt => {
-      //   if (!navContainer.contains(evt.target)) {
-      //     navContainer.querySelectorAll('.dropdown-menu.show').forEach(openMenu => {
-      //       openMenu.classList.remove('show');
-      //     });
-      //   }
-      // });
     })
     .catch(err => {
       console.error('Failed to load nav:', err);
@@ -368,101 +369,78 @@ function loadNavTabs() {
 
 
 
-  // ===============================
+// ===============================
 // Side Panel (layout-collapsing)
 // ===============================
-// async function loadSidePanel() {
-//   // console.log('DEBUG: loadSidePanel() called');
 
-//   const panel = document.getElementById('sidepanel');
-//   const inner = document.getElementById('sidepanel-inner');
-//   const toggleBtn = document.getElementById('sidepanel-toggle');
-
-//   if (!panel || !inner || !toggleBtn) return;
-
-//   const currentPage =
-//     new URLSearchParams(window.location.search).get('page') || 'index';
-
-//   const isCollapsed =
-//     localStorage.getItem('sidepanel_collapsed') === 'true';
-
-//   if (isCollapsed) {
-//     panel.classList.add('collapsed');
-//     // toggleBtn.innerHTML = `<i class="fa-solid fa-folder-plus"></i>`;
-//     toggleBtn.innerHTML = '<i class="bi bi-layout-sidebar"></i>';
-//   } else {
-//     // toggleBtn.innerHTML = `<i class="fa-solid fa-folder-minus"></i>`;
-//     toggleBtn.innerHTML = '<i class="bi bi-layout-sidebar-reverse"></i>';
-//   }
-
-//   try {
-//     const res = await fetch('/api/nav/sidepanel');
-//     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-//     const sideNav = await res.json();
-
-//     renderAllSidePanelSections(inner, sideNav, currentPage);
-//   } catch (err) {
-//     console.error('Failed to load side panel:', err);
-//     inner.innerHTML = '';
-//   }
-
-//   // Collapse / expand behavior
-//   toggleBtn.onclick = () => {
-//     const collapsed = panel.classList.toggle('collapsed');
-//     localStorage.setItem('sidepanel_collapsed', collapsed);
-
-//     // toggleBtn.innerHTML = `
-//     //   <i class="fa-solid ${
-//     //     collapsed ? 'fa-folder-plus' : 'fa-folder-minus'
-//     //   }"></i>
-//     // `;
-
-//     toggleBtn.innerHTML = `
-//       <i class="bi ${
-//         collapsed ? 'bi-layout-sidebar' : 'bi-layout-sidebar-reverse'
-//       }"></i>
-//     `;
-//   };
-// }
 async function loadSidePanel() {
   const panel = document.getElementById('sidepanel');
   const inner = document.getElementById('sidepanel-inner');
   const toggleBtn = document.getElementById('sidepanel-toggle');
-  
+
   if (!panel || !inner || !toggleBtn) return;
-  
-  const currentPage =
-    new URLSearchParams(window.location.search).get('page') || 'index';
-  const isCollapsed =
-    localStorage.getItem('sidepanel_collapsed') === 'true';
-  
-  if (isCollapsed) {
-    panel.classList.add('collapsed');
-    toggleBtn.innerHTML = '<i class="bi bi-layout-sidebar"></i>';
-  } else {
-    toggleBtn.innerHTML = '<i class="bi bi-layout-sidebar-reverse"></i>';
-  }
-  
+
   try {
     const res = await fetch('/api/nav/sidepanel');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);  // ✅ Fixed template literal
-    const sideNav = await res.json();
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const sideNavConfig = await res.json();
+
+    // Disable the entire side panel
+    if (sideNavConfig.SIDE_PANEL?.enabled === false) {
+      panel.hidden = true;
+      inner.innerHTML = '';
+      return;
+    }
+
+    panel.hidden = false;
+
+    const sideNav = sideNavConfig.NAV_ITEMS || {};
+
+    const currentPage =
+      new URLSearchParams(window.location.search).get('page') || 'index';
+
+    const isCollapsed =
+      localStorage.getItem('sidepanel_collapsed') === 'true';
+
+    panel.classList.toggle('collapsed', isCollapsed);
+
+    toggleBtn.innerHTML = `
+      <i class="bi ${
+        isCollapsed
+          ? 'bi-layout-sidebar'
+          : 'bi-layout-sidebar-reverse'
+      }"></i>
+    `;
+
     renderAllSidePanelSections(inner, sideNav, currentPage);
+
+    toggleBtn.onclick = () => {
+      const collapsed = panel.classList.toggle('collapsed');
+
+      localStorage.setItem(
+        'sidepanel_collapsed',
+        String(collapsed)
+      );
+
+      toggleBtn.innerHTML = `
+        <i class="bi ${
+          collapsed
+            ? 'bi-layout-sidebar'
+            : 'bi-layout-sidebar-reverse'
+        }"></i>
+      `;
+    };
   } catch (err) {
     console.error('Failed to load side panel:', err);
+    panel.hidden = true;
     inner.innerHTML = '';
   }
-  
-  // Collapse / expand behavior
-  toggleBtn.onclick = () => {
-    const collapsed = panel.classList.toggle('collapsed');
-    localStorage.setItem('sidepanel_collapsed', collapsed);
-    toggleBtn.innerHTML = `
-      <i class="bi ${collapsed ? 'bi-layout-sidebar' : 'bi-layout-sidebar-reverse'}"></i>
-    `;
-  };
 }
+
 
 // -------------------------------
 // Find matching section by page
@@ -798,61 +776,6 @@ export async function getConfig() {
   return await res.json();
 }
 
-// export async function getConfig() {
-//   const cached = sessionStorage.getItem('ssl_config');
-//   if (!cached) {
-//     throw new Error('ssl_config not found in sessionStorage');
-//   }
-//   return JSON.parse(cached);
-// }
-
-
-// // Load tags
-// export async function loadTags(forceRefresh = false) {
-//   if (!forceRefresh) {
-//     const cached = localStorage.getItem('app_tags');
-//     if (cached) {
-//       // console.log('Loaded tags from cache');
-//       return JSON.parse(cached);
-//     }
-//   }
-
-//   const res = await fetch('/api/sql/query/tags');   // ✅ wait for fetch to resolve
-//   const tags = await res.json();                    // ✅ wait for JSON parsing
-//   localStorage.setItem('app_tags', JSON.stringify(tags));
-//   // console.log('Fetched tags from backend');
-//   return tags;
-// }
-
-
-// export async function refreshTags() {
-//   const tags = await loadTags(true); // force refresh
-//   // console.log('Tags reloaded:', tags);
-// }
-
-
-// export async function tag_badge(tag, active = true) {
-//   const tags = JSON.parse(localStorage.getItem('app_tags')) || [];
-//   const t = tags.find(x => x.name === tag);
-//   if (!t) return `<span class="badge bg-warning" title="Tag not found">${tag}</span>`;
-
-//   const safeName = t.name.replace(/\W+/g, '_');
-
-//   const styleActive = `background-color:${t.color};border-color:${t.color};color:#fff;`;
-//   const styleInactive = `color:${t.color};background-color:#e9ecef;border:1px solid ${t.color};`;
-//   const style = active ? styleActive : styleInactive;
-
-//   return `<span class="tag_${safeName} badge rounded-pill tag-toggle"
-//                data-tag="${t.name}"
-//                data-active="${active}"
-//                style="${style}"
-//                title="${t.description}"
-//                onclick="toggleTag('${t.name.replace(/'/g, "\\'")}')">
-//             ${t.name}
-//           </span>`;
-// }
-
-
 
 
 export async function getLocalTimestamp() {
@@ -876,38 +799,100 @@ export async function getUTCTimestamp() {
 // ===============================
 // Load on page load
 // ===============================
+// window.addEventListener('DOMContentLoaded', async () => {
+//   // Apply saved theme (default to dark)
+//   const savedTheme = localStorage.getItem('theme') || 'dark';
+//   document.documentElement.setAttribute('data-bs-theme', savedTheme);
+
+//   const config = await loadConfig();
+//   // console.log(`DEBUG: ${JSON.stringify(config)}`)
+
+//   // const tags = await loadTags();
+//   // console.log(`DEBUG: ${JSON.stringify(tags)}`)
+
+//   // Load fragments and layout
+//   includeFragment('banner', '/banner.html');
+//   // includeFragment('footer', '/footer.html');
+
+//   loadNav();
+
+//   loadSidePanel();
+
+//   loadFooter();
+
+
+//   // Load Markdown content
+//   const urlParams = new URLSearchParams(window.location.search);
+//   const page = urlParams.get('page') || 'index';
+//   loadMarkdown(`${page}`);
+
+//   // Update title and app description
+//   if (config?.package?.description) {
+//     document.title = config.package.description;
+
+//     const descEl = document.querySelector('.app-description');
+//     if (descEl) descEl.innerHTML = config.package.description;
+//   }
+// });
+
 window.addEventListener('DOMContentLoaded', async () => {
-  // Apply saved theme (default to dark)
-  const savedTheme = localStorage.getItem('theme') || 'dark';
-  document.documentElement.setAttribute('data-bs-theme', savedTheme);
+  const [configResult, nwaConfigResult] =
+    await Promise.allSettled([
+      loadConfig(),
+      loadNwaConfig()
+    ]);
 
-  const config = await loadConfig();
-  // console.log(`DEBUG: ${JSON.stringify(config)}`)
+  const config =
+    configResult.status === 'fulfilled'
+      ? configResult.value
+      : {};
 
-  // const tags = await loadTags();
-  // console.log(`DEBUG: ${JSON.stringify(tags)}`)
+  const nwaConfig =
+    nwaConfigResult.status === 'fulfilled'
+      ? nwaConfigResult.value
+      : {};
 
-  // Load fragments and layout
+  if (configResult.status === 'rejected') {
+    console.error(
+      'Failed to load application config:',
+      configResult.reason
+    );
+  }
+
+  if (nwaConfigResult.status === 'rejected') {
+    console.error(
+      'Failed to load NWA config:',
+      nwaConfigResult.reason
+    );
+  }
+
+  // Saved user preference takes precedence over configured default.
+  const theme = resolveTheme(nwaConfig);
+
+  document.documentElement.setAttribute(
+    'data-bs-theme',
+    theme
+  );
+
   includeFragment('banner', '/banner.html');
-  // includeFragment('footer', '/footer.html');
 
   loadNav();
-
   loadSidePanel();
-
   loadFooter();
 
-
-  // Load Markdown content
   const urlParams = new URLSearchParams(window.location.search);
   const page = urlParams.get('page') || 'index';
-  loadMarkdown(`${page}`);
 
-  // Update title and app description
+  loadMarkdown(page);
+
   if (config?.package?.description) {
     document.title = config.package.description;
 
-    const descEl = document.querySelector('.app-description');
-    if (descEl) descEl.innerHTML = config.package.description;
+    const descEl =
+      document.querySelector('.app-description');
+
+    if (descEl) {
+      descEl.innerHTML = config.package.description;
+    }
   }
 });

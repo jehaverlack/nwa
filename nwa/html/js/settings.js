@@ -1,50 +1,91 @@
-console.log('Settings.js loaded');
+import {
+  loadNwaConfig,
+  resolveTheme
+} from '/js/weblib.js';
 
-// Get current theme from localStorage
-const currentTheme = localStorage.getItem('theme') || 'dark';
-console.log('Current theme:', currentTheme);
+console.log('settings.js loaded');
 
-// Set the toggle to match current theme
-const themeSwitch = document.getElementById('themeSwitch');
-const themeLabel = document.querySelector('label[for="themeSwitch"]');
+initializeSettings();
 
-console.log('Theme switch element found:', themeSwitch);
+async function initializeSettings() {
+  let nwaConfig = {};
 
-if (themeSwitch && themeLabel) {
-  themeSwitch.checked = (currentTheme === 'dark');
-  
-  // Update label based on current theme
-  updateLabel(currentTheme);
-  
-  console.log('Switch checked state:', themeSwitch.checked);
-  
-  // Listen for changes
-  themeSwitch.addEventListener('change', (e) => {
-    console.log('Switch toggled!', e.target.checked);
-    const newTheme = e.target.checked ? 'dark' : 'light';
-    console.log('Setting new theme:', newTheme);
-    setTheme(newTheme);
-    updateLabel(newTheme);
-  });
-} else {
-  console.error('themeSwitch or themeLabel element not found!');
-}
-
-function setTheme(theme) {
-  console.log('setTheme called with:', theme);
-  document.documentElement.setAttribute('data-bs-theme', theme);
-  localStorage.setItem('theme', theme);
-  console.log('Theme set to:', theme);
-  console.log('HTML data-bs-theme attribute:', document.documentElement.getAttribute('data-bs-theme'));
-}
-
-function updateLabel(theme) {
-  const themeLabel = document.querySelector('label[for="themeSwitch"]');
-  if (themeLabel) {
-    if (theme === 'dark') {
-      themeLabel.innerHTML = '<i class="fas fa-moon me-2"></i>Dark Mode';
-    } else {
-      themeLabel.innerHTML = '<i class="fas fa-sun me-2"></i>Light Mode';
-    }
+  try {
+    nwaConfig = await loadNwaConfig();
+  } catch (err) {
+    console.error('Failed to load NWA config:', err);
   }
+
+  const themeSelect =
+    document.getElementById('themeSelect');
+
+  const themeDescription =
+    document.getElementById('themeDescription');
+
+  if (!themeSelect || !themeDescription) {
+    console.error('Theme settings elements not found');
+    return;
+  }
+
+  const savedTheme = localStorage.getItem('theme');
+
+  const configuredDefault =
+    nwaConfig?.APPEARANCE?.default_theme === 'light'
+      ? 'light'
+      : 'dark';
+
+  // Show whether the browser is using an override
+  // or the application-configured default.
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    themeSelect.value = savedTheme;
+  } else {
+    themeSelect.value = 'default';
+  }
+
+  updateThemeDescription(
+    themeSelect.value,
+    configuredDefault,
+    themeDescription
+  );
+
+  themeSelect.addEventListener('change', event => {
+    const selectedTheme = event.target.value;
+
+    if (selectedTheme === 'default') {
+      localStorage.removeItem('theme');
+
+      document.documentElement.setAttribute(
+        'data-bs-theme',
+        configuredDefault
+      );
+    } else {
+      localStorage.setItem('theme', selectedTheme);
+
+      document.documentElement.setAttribute(
+        'data-bs-theme',
+        selectedTheme
+      );
+    }
+
+    updateThemeDescription(
+      selectedTheme,
+      configuredDefault,
+      themeDescription
+    );
+  });
+}
+
+function updateThemeDescription(
+  selectedTheme,
+  configuredDefault,
+  descriptionElement
+) {
+  if (selectedTheme === 'default') {
+    descriptionElement.textContent =
+      `Using the application default: ${configuredDefault}.`;
+    return;
+  }
+
+  descriptionElement.textContent =
+    `Using a browser-specific ${selectedTheme} theme override.`;
 }
